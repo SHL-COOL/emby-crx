@@ -4,7 +4,17 @@ class Home {
 			items: undefined,
 			item: new Map(),
 		};
-		this.itemQuery = { ImageTypes: "Backdrop", EnableImageTypes: "Logo,Backdrop", IncludeItemTypes: "Movie,Series", SortBy: "ProductionYear, PremiereDate, SortName", Recursive: true, ImageTypeLimit: 1, Limit: 10, Fields: "ProductionYear", SortOrder: "Descending", EnableUserData: false, EnableTotalRecordCount: false };
+		this.itemQuery = {
+			ImageTypes: "Backdrop",
+			EnableImageTypes: "Logo,Backdrop",
+			IncludeItemTypes: "Movie,Series",
+			SortBy: " DateCreated",
+			Recursive: true,
+			HasTmdbId: true,
+			ImageTypeLimit: 1, Limit: 10,
+			Fields: "ProductionYear,CommunityRating,ProviderIds",
+			SortOrder: "Descending", EnableUserData: false, EnableTotalRecordCount: false
+		};
 		this.coverOptions = { type: "Backdrop", maxWidth: 3000 };
 		this.logoOptions = { type: "Logo", maxWidth: 3000 };
 		this.initStart = false;
@@ -22,7 +32,7 @@ class Home {
 					this.init();
 				}
 			}
-		}, 233);
+		}, 100);
 	}
 
 	static async init() {
@@ -34,6 +44,8 @@ class Home {
 		// Banner
 		await this.initBanner();
 		this.initEvent();
+
+		
 	}
 
 	/* 插入Loading */
@@ -126,27 +138,42 @@ class Home {
 		$(".view:not(.hide) .homeSectionsContainer").prepend(banner);
 		// $(".view:not(.hide) .section0").detach().appendTo(".view:not(.hide) .misty-banner-library");
 
-		// 插入数据
-		const data = await this.getItems(this.itemQuery);
+		var data = await this.getItems(this.itemQuery);
 		console.log(data);
+		data.Items = this.unique(data.Items, "Name");
+		data.Items = data.Items.sort(() => Math.random() - 0.5);
 		data.Items.forEach(async (item) => {
-			const detail = await this.getItem(item.Id),
-				itemHtml = `
-			<div class="misty-banner-item" id="${detail.Id}">
-				<img draggable="false" loading="eager" decoding="async" class="misty-banner-cover" src="${await this.getImageUrl(detail.Id, this.coverOptions)}" alt="Backdrop" style="">
-				<div class="misty-banner-info padded-left padded-right">
-					<h1>${detail.Name}</h1>
-					<div><p>${detail.Overview}</p></div>
-					<div><button onclick="appRouter.showItem('${detail.Id}')">MORE</button></div>
+			const detail = await this.getItem(item.Id);
+
+			let criticRatingHtml = '';
+			if (detail.CriticRating) {
+				criticRatingHtml = `<a style="margin-right: 10px;" target="_blank" class="mediaInfoItem mediaInfoCriticRating"><div class="mediaInfoCriticRatingImage mediaInfoCriticRatingFresh"></div>${detail.CriticRating}%</a>`;
+			}
+			//const data = await this.sendGetRequest("https://movie.douban.com/j/subject_suggest?q=tt5848272");
+			const itemHtml = `
+				<div class="misty-banner-item" id="${detail.Id}">
+					<img draggable="false" loading="eager" decoding="async" class="misty-banner-cover" src="${await this.getImageUrl(detail.Id, this.coverOptions)}" alt="Backdrop" style="">
+					<div class="misty-banner-info padded-left padded-right">
+						<h1 >${detail.Name}</h1>
+						<div class="title-container">
+							<h2 class="ratingContainer">${detail.ProductionYear}</h2>
+							<a href="https://www.imdb.com/title/${detail.ProviderIds.Imdb}/" target="_blank" style="margin-right: 10px;" class="starRatingContainer mediaInfoItem"><i class="md-icon starIcon"></i>${detail.CommunityRating.toFixed(1)}</a>
+							${criticRatingHtml}
+						</div>
+						<div><p class="full-overview">${detail.Overview}</p></div>
+						<div><button onclick="appRouter.showItem('${detail.Id}')">详情</button></div>
+					</div>
 				</div>
-			</div>
-			`,
-				logoHtml = `
-			<img id="${detail.Id}" draggable="false" loading="auto" decoding="lazy" class="misty-banner-logo" data-banner="img-title" alt="Logo" src="${await this.getImageUrl(detail.Id, this.logoOptions)}">
 			`;
+
+			const logoHtml = `
+				<img id="${detail.Id}" draggable="false" loading="auto" decoding="lazy" class="misty-banner-logo" data-banner="img-title" alt="Logo" src="${await this.getImageUrl(detail.Id, this.logoOptions)}">
+			`;
+
 			if (detail.ImageTags && detail.ImageTags.Logo) {
 				$(".misty-banner-logos").append(logoHtml);
 			}
+
 			$(".misty-banner-body").append(itemHtml);
 			console.log(item.Id, detail);
 		});
@@ -154,7 +181,8 @@ class Home {
 		// 只判断第一张海报加载完毕, 优化加载速度
 		await new Promise((resolve, reject) => {
 			let waitLoading = setInterval(() => {
-				if (document.querySelector(".misty-banner-cover")?.complete) {
+				const mistyBannerCover = document.querySelector(".misty-banner-cover");
+				if (mistyBannerCover && mistyBannerCover.complete) {
 					clearInterval(waitLoading);
 					resolve();
 				}
@@ -165,6 +193,7 @@ class Home {
 		await new Promise((resolve, reject) => {
 			let waitsection0 = setInterval(() => {
 				if ($(".view:not(.hide) .section0 .emby-scrollbuttons").length > 0 && $(".view:not(.hide) .section0.hide").length == 0) {
+					$('div[data-id="41537"]').remove();
 					clearInterval(waitsection0);
 					resolve();
 				}
@@ -173,9 +202,7 @@ class Home {
 
 		$(".view:not(.hide) .section0 .emby-scrollbuttons").remove();
 		const items = $(".view:not(.hide) .section0 .emby-scroller .itemsContainer")[0].items;
-		if (CommonUtils.checkType() === 'pc') {
-			$(".view:not(.hide) .section0").detach().appendTo(".view:not(.hide) .misty-banner-library");
-		}
+		$(".view:not(.hide) .section0").detach().appendTo(".view:not(.hide) .misty-banner-library");
 
 		$(".misty-loading").fadeOut(500, () => $(".misty-loading").remove());
 		await CommonUtils.sleep(150);
@@ -195,7 +222,7 @@ class Home {
 		// 滚屏逻辑
 		var index = 0;
 		clearInterval(this.bannerInterval);
-		this.bannerInterval = setInterval(() => {
+		let timerId = setInterval(() => {
 			// 背景切换
 			if (window.location.href.endsWith("home") && !document.hidden) {
 				index += index + 1 == $(".misty-banner-item").length ? -index : 1;
@@ -208,6 +235,50 @@ class Home {
 				$(`.misty-banner-logo[id=${id}]`).addClass("active");
 			}
 		}, 8000);
+
+		document.addEventListener('keydown', function (event) {
+			if (event.key === 'w') {
+				var index = 0;
+				if (timerId) {
+					clearInterval(timerId);
+					timerId = null; 
+				} else {
+					timerId = setInterval(() => {
+						if (window.location.href.endsWith("home") && !document.hidden) {
+							index += index + 1 == $(".misty-banner-item").length ? -index : 1;
+							$(".misty-banner-body").css("left", -(index * 100).toString() + "%");
+							$(".misty-banner-item.active").removeClass("active");
+							let id = $(".misty-banner-item").eq(index).addClass("active").attr("id");
+							$(".misty-banner-logo.active").removeClass("active");
+							$(`.misty-banner-logo[id=${id}]`).addClass("active");
+						}
+					}, 8000);
+				}
+
+			}
+		});
+	}
+	static async sendGetRequest(url) {
+		try {
+			const response = await fetch(url);
+			if (!response.ok) {
+				throw new Error('Network response was not ok');
+			}
+			const data = await response.json();
+			return data;
+		} catch (error) {
+			throw new Error('Error with GET request:', error);
+		}
+	}
+
+	static unique(arr, attr) {
+		const res = new Map();
+		return arr.filter((item) => {
+
+			var attrItem = item[attr]
+			return !res.has(attrItem) && res.set(attrItem, 1)
+
+		})
 	}
 
 	/* 初始事件 */
